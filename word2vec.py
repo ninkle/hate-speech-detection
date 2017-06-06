@@ -4,6 +4,7 @@ import math
 import glob
 import os
 import re
+import time
 from nltk.corpus import stopwords
 from collections import Counter
 
@@ -39,12 +40,29 @@ def process(label):
     return tweets
 
 def build_vocabulary(data):
+    t0 = time.clock()
     vocab = Counter()
     for tweet in data:
         tweet = tweet.split()
         for word in tweet:
-            if word not in stops:
-                vocab[word] += 1
+            vocab[word] += 1
+    t1 = time.clock()
+    duration = t1 - t0
+
+    min_freq = 3
+    filtered_vocab = {k:v for k, v in vocab.items() if v > min_freq}
+    print("%d words processed in %.2f seconds" % (len(vocab), duration))
+    print("Removing words with a frequency of less than %i, our vocabulary is comprised of %i words" % (min_freq, len(filtered_vocab)))
+
+    word_list = []
+    current_ind = 0
+    for word in vocab:
+        word_list.append((word, current_ind))
+        current_ind += 1
+
+    print(word_list)
+
+
     return vocab
 
 if __name__ == '__main__':
@@ -54,12 +72,14 @@ if __name__ == '__main__':
     vocabulary = build_vocabulary(sexism_data)
     vocabulary_size = len(vocabulary)
 
+
+
     # model
     graph = tf.Graph()
     with graph.as_default(), tf.device('/cpu:0'):
 
         train_dataset = tf.placeholder(tf.int32, shape=[len(sexism_data)])
-        train_labels = tf.placeholder(tf.int32, shape=[batch_size, 1])
+        train_labels = tf.placeholder(tf.int32, shape=[len(sexism_data), 1])
 
         # define parameters
         embedding_size = len(sexism_data)
@@ -72,12 +92,21 @@ if __name__ == '__main__':
         softmax_biases = tf.Variable(tf.zeros([vocabulary_size]))
 
         # model
+        x = tf.placeholder(tf.int32, [None, vocabulary_size])
+        y = tf.placeholder(tf.int32, [None, 1])
         embed = tf.nn.embedding_lookup(embeddings, train_dataset)
         print("Embed size: %s" % embed.get_shape().as_list())
         loss = tf.reduce_mean(tf.nn.sampled_softmax_loss(softmax_weights, softmax_biases, embed,
-                               train_labels, num_sampled, vocabulary_size))
+                               train_labels, 60, vocabulary_size))
 
         optimizer = tf.train.AdagradOptimizer(1.0).minimize(loss)
 
+    # train
+    with tf.Session(graph=graph) as session:
+        tf.initialize_all_variables().run()
+        print('Initialized variables')
+        average_loss = 0
 
+        for step in range(1000):
+            feed_dict = {x: train_dataset, y: train_labels}
 
