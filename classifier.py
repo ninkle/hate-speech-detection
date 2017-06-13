@@ -2,10 +2,11 @@ import os
 import time
 import glob
 import re
+import nltk
+from nltk.corpus import names
 
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.naive_bayes import MultinomialNB
-from sklearn.naive_bayes import BernoulliNB
+from sklearn.externals import joblib
 from sklearn import svm
 from sklearn.metrics import classification_report
 
@@ -26,7 +27,7 @@ contractions_dict = {
     's': 'is',
     't': 'not',
     'wouldn': 'would'
-    }
+}
 
 def get_stems(text):
     # initialize snowball stemmer from nltk
@@ -46,14 +47,19 @@ def get_stems(text):
     text = (" ".join(tokenized))
     return text
 
+
 def process(label):
     tweets = []
     twitter_words = ['rt', 'RT', 'dm', 'DM', 'MKR', 'mkr']
+    female_names = names.words('female.txt')
     for filename in glob.iglob(os.path.join(label, '*.txt')):
         f = open(filename, "r")
         text = f.read()
         text = text.split()
         text = [i for i in text if i not in twitter_words]
+        for i in range(len(text)):
+            if text[i] in female_names:
+                text[i] = 'woman'
         text = ' '.join(text)
         pattern = re.compile(r'\b(' + '|'.join(contractions_dict.keys()) + r')\b')
         result = pattern.sub(lambda x: contractions_dict[x.group()], text)
@@ -61,8 +67,8 @@ def process(label):
         tweets.append(result)
     return tweets
 
-if __name__ == '__main__':
 
+if __name__ == '__main__':
     # clean up each text file and append string to list (racist_data, sexism_data, neutral_data, respectively)
     racism_data = process('Racist')
     sexism_data = process('Sexist')
@@ -73,9 +79,15 @@ if __name__ == '__main__':
     sexism_labels = ['sexism'] * len(sexism_data)
     neutral_labels = ['neutral'] * len(neutral_data)
 
+    # use all data -- comment/uncomment to use/not use full data
+    racism_train_size = len(racism_data)
+    sexism_train_size = len(sexism_data)
+    neutral_train_size = len(neutral_data)
+
+    # comment/uncomment to use/not use split data
     # split into training and testing sets
     # calculate number of tweets constituting 80% of each dataset
-    racism_train_size = int(len(racism_data) * 0.8)
+    '''racism_train_size = int(len(racism_data) * 0.8)
     sexism_train_size = int(len(sexism_data) * 0.8)
     neutral_train_size = int(len(neutral_data) * 0.8)
 
@@ -88,66 +100,45 @@ if __name__ == '__main__':
     sexism_test = sexism_data[sexism_train_size:]
     neutral_test = neutral_data[neutral_train_size:]
 
+
     # aggregate all training/test data/labels into respective sets
     train_data = racism_train + sexism_train + neutral_train
     train_labels = racism_labels[:racism_train_size] + sexism_labels[:sexism_train_size] + neutral_labels[:neutral_train_size]
 
     test_data = racism_test + sexism_test + neutral_test
-    test_labels = racism_labels[racism_train_size:] + sexism_labels[sexism_train_size:] + neutral_labels[neutral_train_size:]
+    test_labels = racism_labels[racism_train_size:] + sexism_labels[sexism_train_size:] + neutral_labels[neutral_train_size:]'''
 
-    vectorizer = TfidfVectorizer(min_df=5,
-                                 max_df=0.8,
-                                 sublinear_tf=True,
-                                 use_idf=True,
-                                 decode_error='ignore')
+    train_data = racism_data + sexism_data + neutral_data
+    train_labels = racism_labels + sexism_labels + neutral_labels
+
+
+    vectorizer = CountVectorizer()
 
     train_vectors = vectorizer.fit_transform(train_data)
-    test_vectors = vectorizer.transform(test_data)
+    # test_vectors = vectorizer.transform(test_data)
 
-    # classification with Multinomial Naive Bayes
-    mnb = MultinomialNB()
-    t0 = time.time()
-    mnb.fit(train_vectors, train_labels)
-    t1 = time.time()
-    prediction_mnb = mnb.predict(test_vectors)
-    t2 = time.time()
-    time_mnb_train = t1 - t0
-    time_mnb_predict = t2 - t1
 
-    # classification with Bernoulli Naive Bayes
-    bnb = BernoulliNB()
+    # classification with Linear SVC
+    lin = svm.LinearSVC()
     t0 = time.time()
-    bnb.fit(train_vectors, train_labels)
+    lin.fit(train_vectors, train_labels)
     t1 = time.time()
-    prediction_bnb = bnb.predict(test_vectors)
+    # prediction_lin = lin.predict(test_vectors)
     t2 = time.time()
-    time_bnb_train = t1 - t0
-    time_bnb_predict = t2 - t1
-
-    # classification with SVM
-    svm = svm.LinearSVC()
-    t0 = time.time()
-    svm.fit(train_vectors, train_labels)
-    t1 = time.time()
-    prediction_svm = svm.predict(test_vectors)
-    t2 = time.time()
-    time_svm_train = t1 - t0
-    time_svm_predict = t2 - t1
+    time_lin_train = t1 - t0
+    time_lin_predict = t2 - t1
 
     # print results
-    print("Results for MultinomialNB()")
-    print("Training time: %fs; Prediction time: %fs" % (time_mnb_train, time_mnb_predict))
-    print(classification_report(test_labels, prediction_mnb))
+    # precision = number of correct positive results divided by the number of all positive results
+    # recall = number of correct positive results divided by the number of positive results that
+    # should have been returned
+    # f1-score = weighted average of the precision and recall
 
-    print("Results for BernoulliNB()")
-    print("Training time: %fs; Prediction time: %fs" % (time_bnb_train, time_bnb_predict))
-    print(classification_report(test_labels, prediction_bnb))
+    # classification report
+    '''print("Results for LinearSVC()")
+    print("Training time: %fs; Prediction time: %fs" % (time_lin_train, time_lin_predict))
+    print(classification_report(test_labels, prediction_lin))'''
 
-    print("Results for svm.SVC()")
-    print("Training time: %fs; Prediction time: %fs" % (time_svm_train, time_svm_predict))
-    print(classification_report(test_labels, prediction_svm))
-
-
-
-
-
+    # Save the model as a pickle in a file
+    saved_vectorizer = joblib.dump(vectorizer, 'vectorizer.pkl')
+    saved_classifier = joblib.dump(lin, 'classifier.pkl')
